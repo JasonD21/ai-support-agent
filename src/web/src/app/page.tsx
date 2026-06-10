@@ -1,48 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
 
 export default function Home() {
-  const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
-  const [detail, setDetail] = useState("");
-
-  useEffect(() => {
-    fetch(`${API_BASE}/health`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data) => {
-        setStatus("ok");
-        setDetail(JSON.stringify(data));
-      })
-      .catch((err) => {
-        setStatus("error");
-        setDetail(String(err));
-      });
-  }, []);
-
+  const { user, loading } = useAuth();
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
       <h1 className="text-2xl font-semibold">AI Support Agent</h1>
-      <p className="text-sm text-gray-500">Foundation smoke test</p>
-      <div className="rounded-lg border px-4 py-3 font-mono text-sm">
-        API:{" "}
-        <span
-          className={
-            status === "ok"
-              ? "text-green-600"
-              : status === "error"
-                ? "text-red-600"
-                : "text-gray-400"
-          }
+      {loading ? (
+        <p className="text-sm text-gray-400">Loading…</p>
+      ) : user ? (
+        <Link
+          href="/dashboard"
+          className="rounded bg-indigo-600 px-4 py-2 text-white"
         >
-          {status}
-        </span>
-        {detail && <div className="mt-2 text-xs text-gray-500">{detail}</div>}
-      </div>
+          Go to dashboard
+        </Link>
+      ) : (
+        <div className="flex gap-3">
+          <Link href="/login" className="rounded border px-4 py-2">
+            Sign in
+          </Link>
+          <Link
+            href="/register"
+            className="rounded bg-indigo-600 px-4 py-2 text-white"
+          >
+            Get started
+          </Link>
+        </div>
+      )}
     </main>
   );
 }
