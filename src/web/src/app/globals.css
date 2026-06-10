@@ -19,6 +19,12 @@
   }
 }
 
+@layer components {
+  .input {
+    @apply w-full rounded border px-3 py-2 text-sm;
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

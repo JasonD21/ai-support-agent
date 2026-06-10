@@ -3,6 +3,7 @@ using System.Text;
 using AiSupportAgent.Api.Common;
 using AiSupportAgent.Api.Identity;
 using AiSupportAgent.Api.Persistence;
+using AiSupportAgent.Api.Tenancy;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -92,6 +93,10 @@ builder.Services.AddOpenApi(options =>
     });
 });
 
+builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+
+builder.Services.AddSingleton<SecretProtector>();
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -106,6 +111,7 @@ app.UseMiddleware<TenantResolutionMiddleware>();   // after auth, before endpoin
 app.UseAuthorization();
 
 app.MapAuthEndpoints();
+app.MapAgentEndpoints();
 
 app.MapGet("/health", () => Results.Ok(new
 {

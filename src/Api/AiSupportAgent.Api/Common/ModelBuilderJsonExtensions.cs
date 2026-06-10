@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using System.Text.Json.Serialization;
 
 namespace AiSupportAgent.Api.Common;
 
@@ -10,7 +11,10 @@ namespace AiSupportAgent.Api.Common;
 // The ValueComparer is required so EF correctly detects changes to reference types.
 public static class ModelBuilderJsonExtensions
 {
-    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
 
     public static PropertyBuilder<T> HasJsonbConversion<T>(this PropertyBuilder<T> property)
     {
@@ -26,4 +30,5 @@ public static class ModelBuilderJsonExtensions
         property.HasConversion(converter, comparer).HasColumnType("jsonb");
         return property;
     }
+
 }
