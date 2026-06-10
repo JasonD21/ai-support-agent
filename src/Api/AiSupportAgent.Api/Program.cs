@@ -1,16 +1,36 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Text;
 using AiSupportAgent.Api.Common;
 using AiSupportAgent.Api.Identity;
 using AiSupportAgent.Api.Persistence;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
+using Scalar.AspNetCore;
+
+JwtSecurityTokenHandler.DefaultMapInboundClaims = false;   // keep "sub"/"tenantId" claim names verbatim
 
 var builder = WebApplication.CreateBuilder(args);
 
+const string DevCorsPolicy = "DevCors";
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(DevCorsPolicy, policy =>
+        policy.WithOrigins("http://localhost:3000")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials());            // needed for the refresh cookie
+});
+
 builder.Services.AddScoped<ITenantContext, TenantContext>();
 
-builder.Services.AddDbContext<AppDbContext>((sp, options) => options.UseNpgsql(
+builder.Services.AddDbContext<AppDbContext>((sp, options) =>
+    options.UseNpgsql(
         builder.Configuration.GetConnectionString("Default"),
-        npgsql => npgsql.UseVector())
+        npgsql => npgsql.UseVector()
+    )
 );
 
 builder.Services.AddDataProtection().PersistKeysToDbContext<AppDbContext>();
@@ -21,13 +41,55 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
         options.User.RequireUniqueEmail = true;
     }).AddEntityFrameworkStores<AppDbContext>();
 
-const string DevCorsPolicy = "DevCors";
-builder.Services.AddCors(options =>
+builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
+builder.Services.AddSingleton<TokenService>();
+
+var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()!;
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwt.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwt.Audience,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
+            ClockSkew = TimeSpan.FromSeconds(30)
+        };
+    });
+
+builder.Services.AddAuthorization();
+
+builder.Services.AddOpenApi(options =>
 {
-    options.AddPolicy(DevCorsPolicy, policy =>
-        policy.WithOrigins("http://localhost:3000")
-              .AllowAnyHeader()
-              .AllowAnyMethod());
+    options.AddDocumentTransformer((document, context, cancellationToken) =>
+    {
+        var bearer = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            In = ParameterLocation.Header,
+            Name = "Authorization",
+            Description = "Paste your access token (Scalar adds the 'Bearer ' prefix)."
+        };
+
+        document.Components ??= new OpenApiComponents();
+        document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+        document.Components.SecuritySchemes["Bearer"] = bearer;
+
+        document.Security ??= [];
+        document.Security.Add(new OpenApiSecurityRequirement
+        {
+            [new OpenApiSecuritySchemeReference("Bearer", document)] = []
+        });
+
+        return Task.CompletedTask;
+    });
 });
 
 var app = builder.Build();
@@ -35,7 +97,15 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.UseCors(DevCorsPolicy);
+    app.MapOpenApi();                 // serves /openapi/v1.json
+    app.MapScalarApiReference();      // serves the UI at /scalar
 }
+
+app.UseAuthentication();
+app.UseMiddleware<TenantResolutionMiddleware>();   // after auth, before endpoints
+app.UseAuthorization();
+
+app.MapAuthEndpoints();
 
 app.MapGet("/health", () => Results.Ok(new
 {
