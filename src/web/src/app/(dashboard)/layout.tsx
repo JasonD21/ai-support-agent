@@ -36,6 +36,9 @@ export default function DashboardLayout({
             <Link href="/knowledge" className={linkCls("/knowledge")}>
               Knowledge
             </Link>
+            <Link href="/preview" className={linkCls("/preview")}>
+              Test agent
+            </Link>
             <Link href="/settings" className={linkCls("/settings")}>
               Settings
             </Link>
