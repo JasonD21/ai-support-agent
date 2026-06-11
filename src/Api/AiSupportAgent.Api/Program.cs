@@ -4,6 +4,7 @@ using AiSupportAgent.Api.Common;
 using AiSupportAgent.Api.Identity;
 using AiSupportAgent.Api.Knowledge;
 using AiSupportAgent.Api.Persistence;
+using AiSupportAgent.Api.Rag;
 using AiSupportAgent.Api.Tenancy;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
@@ -44,7 +45,9 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
     }).AddEntityFrameworkStores<AppDbContext>();
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
-builder.Services.AddSingleton<TokenService>();
+builder.Services.Configure<AiSupportAgent.Api.Rag.RagOptions>(builder.Configuration.GetSection("Rag"));
+
+
 
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()!;
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -106,9 +109,14 @@ builder.Services.AddSingleton<IEmbedder>(sp =>
         Path.Combine(root, cfg["VocabPath"]!),
         cfg["ModelId"]!);
 });
+builder.Services.AddSingleton<TokenService>();
+builder.Services.AddSingleton<AiSupportAgent.Api.Rag.IChatClient, AiSupportAgent.Api.Rag.OpenRouterChatClient>();
+
+builder.Services.AddHttpClient();
 
 builder.Services.AddScoped<KnowledgeService>();
 builder.Services.AddScoped<ITenantContext, TenantContext>();
+builder.Services.AddScoped<RetrievalService>();
 
 var app = builder.Build();
 
@@ -120,12 +128,13 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseAuthentication();
-app.UseMiddleware<TenantResolutionMiddleware>();   // after auth, before endpoints
+app.UseMiddleware<TenantResolutionMiddleware>();
 app.UseAuthorization();
 
 app.MapAuthEndpoints();
 app.MapAgentEndpoints();
 app.MapKnowledgeEndpoints();
+app.MapChatEndpoints();
 
 app.MapGet("/health", () => Results.Ok(new
 {
