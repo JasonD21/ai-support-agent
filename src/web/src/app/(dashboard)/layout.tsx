@@ -39,6 +39,12 @@ export default function DashboardLayout({
             <Link href="/preview" className={linkCls("/preview")}>
               Test agent
             </Link>
+            <Link href="/conversations" className={linkCls("/conversations")}>
+              Conversations
+            </Link>
+            <Link href="/leads" className={linkCls("/leads")}>
+              Leads
+            </Link>
             <Link href="/settings" className={linkCls("/settings")}>
               Settings
             </Link>

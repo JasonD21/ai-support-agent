@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
+import DashboardSummary from "@/components/DashboardSummary";
 
 export default function DashboardPage() {
   const { user, tenant } = useAuth();
@@ -16,6 +17,7 @@ export default function DashboardPage() {
           <span className="text-gray-500">Business:</span> {tenant?.name}
         </p>
       </div>
+      <DashboardSummary />
       <p className="text-sm text-gray-500">
         Configure your agent in{" "}
         <Link href="/settings" className="text-indigo-600">

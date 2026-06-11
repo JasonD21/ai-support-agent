@@ -5,7 +5,7 @@ namespace AiSupportAgent.Api.Common;
 public class EmailOptions
 {
     public string? ApiKey { get; set; }
-    public string FromEmail { get; set; } = "onboarding@resend.dev";
+    public string FromEmail { get; set; } = "jasondavids54@gmail.com";
 }
 
 public interface IEmailSender

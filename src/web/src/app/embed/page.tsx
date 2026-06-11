@@ -27,6 +27,16 @@ export default function EmbedPage() {
   const [streaming, setStreaming] = useState(false);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [handoffActive, setHandoffActive] = useState(false);
+  const [handoffDone, setHandoffDone] = useState(false);
+  const [cName, setCName] = useState("");
+  const [cEmail, setCEmail] = useState("");
+  const [cPhone, setCPhone] = useState("");
+  const [cMsg, setCMsg] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
   const session = useRef<Session | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -165,6 +175,8 @@ export default function EmbedPage() {
             scrollDown();
           } else if (evt.type === "handoff") {
             patchLast((m) => ({ ...m, handoff: evt.reason as string }));
+            setHandoffActive(true);
+            scrollDown();
           } else if (evt.type === "error") {
             patchLast((m) => ({ ...m, content: evt.message as string }));
           }
@@ -178,7 +190,48 @@ export default function EmbedPage() {
     }
   }
 
+  async function submitHandoff() {
+    if (!session.current || !siteKey) return;
+    if (!cName.trim() || !cEmail.trim() || !cEmail.includes("@")) {
+      setFormError("Name and a valid email are required.");
+      return;
+    }
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/widget/conversations/${session.current.conversationId}/handoff`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Site-Key": siteKey,
+            "X-Session-Token": session.current.sessionToken,
+            "X-Widget-Origin": hostOrigin,
+          },
+          body: JSON.stringify({
+            name: cName.trim(),
+            email: cEmail.trim(),
+            phone: cPhone.trim() || null,
+            message: cMsg.trim() || null,
+          }),
+        },
+      );
+      if (!res.ok) {
+        setFormError("Couldn't send. Please try again.");
+        return;
+      }
+      setHandoffDone(true);
+    } catch {
+      setFormError("Couldn't send. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   const theme = config?.themeColor || "#4f46e5";
+  const field =
+    "w-full rounded border px-2 py-1.5 text-sm focus:outline-none focus:ring-2";
 
   return (
     <div className="flex h-screen flex-col bg-white">
@@ -226,7 +279,8 @@ export default function EmbedPage() {
                 )}
                 {m.handoff && (
                   <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                    I’ll connect you with the team — someone will follow up.
+                    I’ll connect you with the team — leave your details below
+                    and someone will follow up.
                   </div>
                 )}
               </div>
@@ -234,6 +288,51 @@ export default function EmbedPage() {
           );
         })}
       </div>
+
+      {handoffActive && !handoffDone && (
+        <div className="m-3 space-y-2 rounded-lg border bg-gray-50 p-3">
+          <p className="text-sm font-medium">Leave your details</p>
+          {formError && <p className="text-xs text-red-600">{formError}</p>}
+          <input
+            className={field}
+            placeholder="Name *"
+            value={cName}
+            onChange={(e) => setCName(e.target.value)}
+          />
+          <input
+            className={field}
+            placeholder="Email *"
+            value={cEmail}
+            onChange={(e) => setCEmail(e.target.value)}
+          />
+          <input
+            className={field}
+            placeholder="Phone (optional)"
+            value={cPhone}
+            onChange={(e) => setCPhone(e.target.value)}
+          />
+          <textarea
+            className={field}
+            placeholder="Anything else? (optional)"
+            rows={2}
+            value={cMsg}
+            onChange={(e) => setCMsg(e.target.value)}
+          />
+          <button
+            onClick={submitHandoff}
+            disabled={submitting}
+            className="w-full rounded px-4 py-2 text-sm text-white disabled:opacity-50"
+            style={{ background: theme }}
+          >
+            {submitting ? "Sending…" : "Send"}
+          </button>
+        </div>
+      )}
+      {handoffDone && (
+        <div className="m-3 rounded-lg border border-green-300 bg-green-50 p-3 text-sm text-green-800">
+          Thanks — someone will be in touch shortly.
+        </div>
+      )}
 
       <div className="flex gap-2 border-t p-3">
         <input
