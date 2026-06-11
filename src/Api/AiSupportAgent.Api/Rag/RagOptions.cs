@@ -7,4 +7,7 @@ public class RagOptions
     public double SimilarityFloor { get; set; } = 0.35;
     public int MaxOutputTokens { get; set; } = 400;
     public string? SharedBaseUrl { get; set; }   // default provider (OpenAI-compatible)
+    public int MaxInputChars { get; set; } = 1000;
+    public int PerTenantDailyMessageCap { get; set; } = 200;
+    public int GlobalDailyFreeCallCap { get; set; } = 45;
 }

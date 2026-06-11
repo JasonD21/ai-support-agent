@@ -5,31 +5,24 @@ using Microsoft.Extensions.Options;
 
 namespace AiSupportAgent.Api.Rag;
 
-public class OpenRouterChatClient(IHttpClientFactory httpFactory, IOptions<RagOptions> ragOptions, ILogger<OpenRouterChatClient> logger) : IChatClient
+public class OpenRouterChatClient(IHttpClientFactory httpFactory, IOptions<RagOptions> ragOptions) : IChatClient
 {
-    public async IAsyncEnumerable<string> StreamAsync(IReadOnlyList<ChatMessage> messages, ChatClientConfig config,
+    public async IAsyncEnumerable<string> StreamAsync(IReadOnlyList<ChatMessage> messages, ChatClientConfig config, ChatResult result,
         [EnumeratorCancellation] CancellationToken ct)
     {
         var http = httpFactory.CreateClient();
-        var baseUrl = (config.BaseUrl ?? ragOptions.Value.SharedBaseUrl ?? "https://openrouter.ai/api/v1").TrimEnd('/');
+        var baseUrl = (config.BaseUrl ?? "https://openrouter.ai/api/v1").TrimEnd('/');
         var apiKey = config.ApiKey ?? ragOptions.Value.SharedApiKey;
         var models = config.Models.Count > 0 ? config.Models : ragOptions.Value.Models;
 
-        // Open phase: try models in order; fall back only before any token is streamed.
         HttpResponseMessage? response = null;
         foreach (var model in models)
         {
             var request = BuildRequest(baseUrl, apiKey, model, messages, ragOptions.Value.MaxOutputTokens);
             HttpResponseMessage resp;
-
             try { resp = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct); }
-            catch (Exception ex)
-            { logger.LogWarning(ex, "OpenRouter request to {Model} threw", model); continue; }
-
-            if (resp.IsSuccessStatusCode) { response = resp; break; }
-            var errorBody = await resp.Content.ReadAsStringAsync(ct);
-            logger.LogWarning("OpenRouter model {Model} failed: {Status} {Body}",
-                model, (int)resp.StatusCode, errorBody);
+            catch { continue; }
+            if (resp.IsSuccessStatusCode) { response = resp; result.Model = model; break; }
             resp.Dispose();
         }
         if (response is null) throw new InvalidOperationException("All chat models failed.");
@@ -45,7 +38,6 @@ public class OpenRouterChatClient(IHttpClientFactory httpFactory, IOptions<RagOp
                 var data = line[5..].Trim();
                 if (data.Length == 0) continue;
                 if (data == "[DONE]") yield break;
-
                 var token = ExtractDelta(data);
                 if (!string.IsNullOrEmpty(token)) yield return token;
             }

@@ -12,6 +12,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using Scalar.AspNetCore;
+using Microsoft.AspNetCore.HttpOverrides;
+using System.Threading.RateLimiting;
+using AiSupportAgent.Api.Widget;
 
 JwtSecurityTokenHandler.DefaultMapInboundClaims = false;   // keep "sub"/"tenantId" claim names verbatim
 
@@ -25,9 +28,11 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials());            // needed for the refresh cookie
+    options.AddPolicy("widget", p => p
+        .AllowAnyOrigin()
+        .AllowAnyHeader()
+        .AllowAnyMethod());
 });
-
-
 
 builder.Services.AddDbContext<AppDbContext>((sp, options) =>
     options.UseNpgsql(
@@ -45,7 +50,7 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
     }).AddEntityFrameworkStores<AppDbContext>();
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
-builder.Services.Configure<AiSupportAgent.Api.Rag.RagOptions>(builder.Configuration.GetSection("Rag"));
+builder.Services.Configure<RagOptions>(builder.Configuration.GetSection("Rag"));
 
 
 
@@ -99,6 +104,25 @@ builder.Services.AddOpenApi(options =>
 
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
+builder.Services.Configure<ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    o.KnownNetworks.Clear();
+    o.KnownProxies.Clear();
+});
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("widget", http =>
+    {
+        var siteKey = http.Request.Headers["X-Site-Key"].FirstOrDefault() ?? "anon";
+        var ip = http.Connection.RemoteIpAddress?.ToString() ?? "noip";
+        return RateLimitPartition.GetFixedWindowLimiter($"{siteKey}:{ip}", _ =>
+            new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 });
+    });
+});
+
 builder.Services.AddSingleton<SecretProtector>();
 builder.Services.AddSingleton<IEmbedder>(sp =>
 {
@@ -120,6 +144,8 @@ builder.Services.AddScoped<RetrievalService>();
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseCors(DevCorsPolicy);
@@ -130,11 +156,13 @@ if (app.Environment.IsDevelopment())
 app.UseAuthentication();
 app.UseMiddleware<TenantResolutionMiddleware>();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapAuthEndpoints();
 app.MapAgentEndpoints();
 app.MapKnowledgeEndpoints();
 app.MapChatEndpoints();
+app.MapWidgetEndpoints();
 
 app.MapGet("/health", () => Results.Ok(new
 {
