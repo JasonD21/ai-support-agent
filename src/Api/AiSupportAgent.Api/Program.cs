@@ -15,6 +15,9 @@ using Scalar.AspNetCore;
 using Microsoft.AspNetCore.HttpOverrides;
 using System.Threading.RateLimiting;
 using AiSupportAgent.Api.Widget;
+using AiSupportAgent.Api.Conversations;
+using AiSupportAgent.Api.Leads;
+using AiSupportAgent.Api.Dashboard;
 
 JwtSecurityTokenHandler.DefaultMapInboundClaims = false;   // keep "sub"/"tenantId" claim names verbatim
 
@@ -110,6 +113,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(o =>
     o.KnownNetworks.Clear();
     o.KnownProxies.Clear();
 });
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -134,7 +138,8 @@ builder.Services.AddSingleton<IEmbedder>(sp =>
         cfg["ModelId"]!);
 });
 builder.Services.AddSingleton<TokenService>();
-builder.Services.AddSingleton<AiSupportAgent.Api.Rag.IChatClient, AiSupportAgent.Api.Rag.OpenRouterChatClient>();
+builder.Services.AddSingleton<IChatClient, OpenRouterChatClient>();
+builder.Services.AddSingleton<IEmailSender, ResendEmailSender>();
 
 builder.Services.AddHttpClient();
 
@@ -163,6 +168,9 @@ app.MapAgentEndpoints();
 app.MapKnowledgeEndpoints();
 app.MapChatEndpoints();
 app.MapWidgetEndpoints();
+app.MapConversationEndpoints();
+app.MapLeadEndpoints();
+app.MapDashboardEndpoints();
 
 app.MapGet("/health", () => Results.Ok(new
 {

@@ -1,12 +1,16 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.Encodings.Web;
 using AiSupportAgent.Api.Common;
 using AiSupportAgent.Api.Conversations;
+using AiSupportAgent.Api.Identity;
 using AiSupportAgent.Api.Knowledge;
+using AiSupportAgent.Api.Leads;
 using AiSupportAgent.Api.Persistence;
 using AiSupportAgent.Api.Rag;
 using AiSupportAgent.Api.Tenancy;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -25,6 +29,7 @@ public static class WidgetEndpoints
         g.MapPost("/conversations", StartConversation);
         g.MapPost("/conversations/{id:guid}/messages", PostMessage);
         g.MapGet("/conversations/{id:guid}/messages", GetMessages);
+        g.MapPost("/conversations/{id:guid}/handoff", SubmitHandoff);
         return app;
     }
 
@@ -62,12 +67,15 @@ public static class WidgetEndpoints
 
         var msgs = await db.Messages.Where(m => m.ConversationId == id)
             .OrderBy(m => m.CreatedAt)
-            .Select(m => new WidgetHistoryMessage(m.Role == MessageRole.Assistant ? "assistant" : "user", m.Content, m.CreatedAt))
+            .Select(m => new WidgetHistoryMessage(
+                m.Role == MessageRole.Assistant ? "assistant" : "user", m.Content, m.CreatedAt))
             .ToListAsync(http.RequestAborted);
         return Results.Ok(msgs);
     }
 
-    private static async Task PostMessage(Guid id, WidgetMessageRequest body, HttpContext http, AppDbContext db, RetrievalService retrieval, IChatClient chat,
+    private static async Task PostMessage(
+        Guid id, WidgetMessageRequest body, HttpContext http,
+        AppDbContext db, RetrievalService retrieval, IChatClient chat,
         SecretProtector protector, IOptions<RagOptions> ragOpts)
     {
         var ct = http.RequestAborted;
@@ -92,7 +100,6 @@ public static class WidgetEndpoints
         var now = DateTime.UtcNow;
         var today = DateOnly.FromDateTime(now);
 
-        // persist the visitor message + meter per-tenant usage
         db.Messages.Add(new Message
         {
             Id = Guid.NewGuid(),
@@ -113,17 +120,16 @@ public static class WidgetEndpoints
         await db.SaveChangesAsync(ct);
 
         if (usage.MessageCount > opts.PerTenantDailyMessageCap)
-        { await Handoff(resp, db, convo, "QuotaOverflow", ct); return; }
+        { await EmitHandoff(resp, db, convo, LeadReason.QuotaOverflow, text, hard: true, ct); return; }
 
         if (tenant.AgentConfig.Handoff.OnExplicitRequest && HandoffIntent.WantsHuman(text))
-        { await Handoff(resp, db, convo, "Explicit", ct); return; }
+        { await EmitHandoff(resp, db, convo, LeadReason.Explicit, text, hard: true, ct); return; }
 
         var chunks = await retrieval.RetrieveAsync(text, ct);
         var topSim = chunks.Count > 0 ? chunks.Max(c => c.Similarity) : 0;
         if (tenant.AgentConfig.Handoff.OnNoGrounding && (chunks.Count == 0 || topSim < opts.SimilarityFloor))
-        { await Handoff(resp, db, convo, "NoGrounding", ct, topSim); return; }
+        { await EmitHandoff(resp, db, convo, LeadReason.NoGrounding, text, hard: false, ct, topSim); return; }
 
-        // global free-tier guard (shared OpenRouter key — cross-tenant blast radius)
         var global = await db.GlobalDailyUsages.IgnoreQueryFilters()
             .FirstOrDefaultAsync(gx => gx.UsageDate == today, ct);
         if (global is null)
@@ -132,14 +138,13 @@ public static class WidgetEndpoints
             db.GlobalDailyUsages.Add(global);
         }
         if (global.FreeCallCount >= opts.GlobalDailyFreeCallCap)
-        { await Handoff(resp, db, convo, "QuotaOverflow", ct); return; }
+        { await EmitHandoff(resp, db, convo, LeadReason.QuotaOverflow, text, hard: true, ct); return; }
         global.FreeCallCount++;
         await db.SaveChangesAsync(ct);
 
-        // history from persisted messages (sliding window; includes the message just saved)
         var prior = await db.Messages.Where(m => m.ConversationId == convo.Id)
             .OrderByDescending(m => m.CreatedAt).Take(10)
-            .Select(m => new { m.Role, m.Content, m.CreatedAt })
+            .Select(m => new { m.Role, m.Content })
             .ToListAsync(ct);
         prior.Reverse();
 
@@ -183,10 +188,16 @@ public static class WidgetEndpoints
             CreatedAt = DateTime.UtcNow
         });
         convo.LastMessageAt = DateTime.UtcNow;
-        if (refused) convo.Status = ConversationStatus.HandedOff;
         await db.SaveChangesAsync(ct);
 
-        if (refused) await Sse.Send(resp, new { type = "handoff", reason = "NoGrounding" }, ct);
+        if (refused)
+        {
+            var trailing = await CountTrailingUnresolved(db, convo.Id, ct);
+            var reason = trailing >= opts.ConsecutiveUnresolvedThreshold ? LeadReason.Unresolved : LeadReason.NoGrounding;
+            await EnsureLead(db, convo, reason, text, ct);
+            await Sse.Send(resp, new { type = "handoff", reason = reason.ToString() }, ct);
+        }
+
         await Sse.Send(resp, new
         {
             type = "done",
@@ -198,12 +209,101 @@ public static class WidgetEndpoints
         }, ct);
     }
 
-    private static async Task Handoff(HttpResponse resp, AppDbContext db, Conversation convo,
-        string reason, CancellationToken ct, double topSim = 0)
+    private static async Task<IResult> SubmitHandoff(
+        Guid id, HandoffRequest body, HttpContext http,
+        AppDbContext db, IEmailSender email, UserManager<ApplicationUser> users)
     {
+        var ct = http.RequestAborted;
+        var tenant = (Tenant)http.Items["Tenant"]!;
+        var sessionToken = http.Request.Headers["X-Session-Token"].FirstOrDefault();
+
+        var convo = await db.Conversations.FirstOrDefaultAsync(c => c.Id == id, ct);
+        if (convo is null || sessionToken is null || convo.SessionToken != sessionToken)
+            return Results.Problem(statusCode: 401, title: "Invalid session.");
+
+        if (string.IsNullOrWhiteSpace(body.Name) || string.IsNullOrWhiteSpace(body.Email) || !body.Email.Contains('@'))
+            return Results.Problem(statusCode: 400, title: "Name and a valid email are required.");
+
+        var lead = await db.Leads.FirstOrDefaultAsync(l => l.ConversationId == id, ct);
+        if (lead is null)
+        {
+            lead = new Lead
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenant.Id,
+                ConversationId = id,
+                Reason = LeadReason.Explicit,
+                Status = LeadStatus.New,
+                CreatedAt = DateTime.UtcNow
+            };
+            db.Leads.Add(lead);
+        }
+        lead.ContactName = body.Name.Trim();
+        lead.ContactEmail = body.Email.Trim();
+        lead.ContactPhone = string.IsNullOrWhiteSpace(body.Phone) ? null : body.Phone.Trim();
+        lead.VisitorMessage = string.IsNullOrWhiteSpace(body.Message) ? null : body.Message.Trim();
         convo.Status = ConversationStatus.HandedOff;
         await db.SaveChangesAsync(ct);
-        await Sse.Send(resp, new { type = "handoff", reason }, ct);
+
+        var owner = await users.FindByIdAsync(tenant.OwnerUserId);
+        if (owner?.Email is not null)
+        {
+            string E(string? s) => HtmlEncoder.Default.Encode(s ?? "-");
+            var html =
+                $"<p>New lead captured by your support agent.</p>" +
+                $"<p><b>Name:</b> {E(lead.ContactName)}<br/>" +
+                $"<b>Email:</b> {E(lead.ContactEmail)}<br/>" +
+                $"<b>Phone:</b> {E(lead.ContactPhone)}</p>" +
+                $"<p><b>Message:</b> {E(lead.VisitorMessage)}</p>" +
+                $"<p><b>Reason:</b> {lead.Reason}<br/><b>Stumping question:</b> {E(lead.StumpingQuestion)}</p>";
+            try { await email.SendAsync(owner.Email, $"New lead: {lead.ContactName}", html, ct); } catch { /* non-fatal */ }
+        }
+
+        return Results.Ok(new { ok = true });
+    }
+
+    private static async Task EmitHandoff(
+        HttpResponse resp, AppDbContext db, Conversation convo, LeadReason reason,
+        string? stumping, bool hard, CancellationToken ct, double topSim = 0)
+    {
+        if (hard) convo.Status = ConversationStatus.HandedOff;
+        await EnsureLead(db, convo, reason, stumping, ct);
+        await Sse.Send(resp, new { type = "handoff", reason = reason.ToString() }, ct);
         await Sse.Send(resp, new { type = "done", wasGrounded = false, topSimilarity = topSim }, ct);
+    }
+
+    private static async Task EnsureLead(
+        AppDbContext db, Conversation convo, LeadReason reason, string? stumping, CancellationToken ct)
+    {
+        var lead = await db.Leads.FirstOrDefaultAsync(l => l.ConversationId == convo.Id, ct);
+        if (lead is null)
+        {
+            db.Leads.Add(new Lead
+            {
+                Id = Guid.NewGuid(),
+                TenantId = convo.TenantId,
+                ConversationId = convo.Id,
+                Reason = reason,
+                StumpingQuestion = stumping,
+                Status = LeadStatus.New,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+        else if (reason == LeadReason.Unresolved && lead.Reason == LeadReason.NoGrounding)
+        {
+            lead.Reason = LeadReason.Unresolved; // escalate the existing open lead
+        }
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task<int> CountTrailingUnresolved(AppDbContext db, Guid convoId, CancellationToken ct)
+    {
+        var recent = await db.Messages
+            .Where(m => m.ConversationId == convoId && m.Role == MessageRole.Assistant)
+            .OrderByDescending(m => m.CreatedAt).Take(5)
+            .Select(m => m.WasGrounded).ToListAsync(ct);
+        var count = 0;
+        foreach (var g in recent) { if (g == false) count++; else break; }
+        return count;
     }
 }

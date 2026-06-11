@@ -19,3 +19,9 @@ public record WidgetHistoryMessage(
     string Content,
     DateTime CreatedAt
 );
+public record HandoffRequest(
+    string Name,
+    string Email,
+    string? Phone,
+    string? Message
+);
