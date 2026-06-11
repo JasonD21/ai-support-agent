@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using AiSupportAgent.Api.Common;
 using AiSupportAgent.Api.Identity;
+using AiSupportAgent.Api.Knowledge;
 using AiSupportAgent.Api.Persistence;
 using AiSupportAgent.Api.Tenancy;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -25,7 +26,7 @@ builder.Services.AddCors(options =>
               .AllowCredentials());            // needed for the refresh cookie
 });
 
-builder.Services.AddScoped<ITenantContext, TenantContext>();
+
 
 builder.Services.AddDbContext<AppDbContext>((sp, options) =>
     options.UseNpgsql(
@@ -96,6 +97,18 @@ builder.Services.AddOpenApi(options =>
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
 builder.Services.AddSingleton<SecretProtector>();
+builder.Services.AddSingleton<IEmbedder>(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>().GetSection("Embedding");
+    var root = sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath;
+    return new OnnxEmbedder(
+        Path.Combine(root, cfg["ModelPath"]!),
+        Path.Combine(root, cfg["VocabPath"]!),
+        cfg["ModelId"]!);
+});
+
+builder.Services.AddScoped<KnowledgeService>();
+builder.Services.AddScoped<ITenantContext, TenantContext>();
 
 var app = builder.Build();
 
@@ -112,6 +125,7 @@ app.UseAuthorization();
 
 app.MapAuthEndpoints();
 app.MapAgentEndpoints();
+app.MapKnowledgeEndpoints();
 
 app.MapGet("/health", () => Results.Ok(new
 {
