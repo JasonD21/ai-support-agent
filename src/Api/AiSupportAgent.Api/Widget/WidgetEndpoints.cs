@@ -32,7 +32,7 @@ public static class WidgetEndpoints
     {
         var t = (Tenant)http.Items["Tenant"]!;
         var c = t.AgentConfig;
-        return Results.Ok(new WidgetConfigResponse(c.AgentName, c.Greeting, c.ThemeColor, c.BubblePosition));
+        return Results.Ok(new WidgetConfigResponse(c.AgentName, c.Greeting, c.ThemeColor, c.BubblePosition.ToString()));
     }
 
     private static async Task<IResult> StartConversation(HttpContext http, AppDbContext db)
