@@ -24,17 +24,23 @@ JwtSecurityTokenHandler.DefaultMapInboundClaims = false;   // keep "sub"/"tenant
 var builder = WebApplication.CreateBuilder(args);
 
 const string DevCorsPolicy = "DevCors";
+var frontendOrigin = builder.Configuration["Cors:FrontendOrigin"] ?? "http://localhost:3000";
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(DevCorsPolicy, policy =>
         policy.WithOrigins("http://localhost:3000")
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials());            // needed for the refresh cookie
-    options.AddPolicy("widget", p => p
-        .AllowAnyOrigin()
-        .AllowAnyHeader()
-        .AllowAnyMethod());
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials());            // needed for the refresh cookie
+    options.AddPolicy("widget", p =>
+        p.AllowAnyOrigin()
+            .AllowAnyHeader()
+            .AllowAnyMethod());
+    options.AddPolicy("dashboard", p =>
+        p.WithOrigins(frontendOrigin)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials());
 });
 
 builder.Services.AddDbContext<AppDbContext>((sp, options) =>
@@ -44,7 +50,7 @@ builder.Services.AddDbContext<AppDbContext>((sp, options) =>
     )
 );
 
-builder.Services.AddDataProtection().PersistKeysToDbContext<AppDbContext>();
+builder.Services.AddDataProtection().PersistKeysToDbContext<AppDbContext>().SetApplicationName("ai-support-agent");
 
 builder.Services.AddIdentityCore<ApplicationUser>(options =>
     {
