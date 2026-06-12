@@ -73,10 +73,8 @@ public static class WidgetEndpoints
         return Results.Ok(msgs);
     }
 
-    private static async Task PostMessage(
-        Guid id, WidgetMessageRequest body, HttpContext http,
-        AppDbContext db, RetrievalService retrieval, IChatClient chat,
-        SecretProtector protector, IOptions<RagOptions> ragOpts)
+    private static async Task PostMessage(Guid id, WidgetMessageRequest body, HttpContext http, AppDbContext db, RetrievalService retrieval, IChatClient chat,
+        SecretProtector protector, IEmailSender email, IOptions<RagOptions> ragOpts)
     {
         var ct = http.RequestAborted;
         var resp = http.Response;
@@ -140,6 +138,20 @@ public static class WidgetEndpoints
         if (global.FreeCallCount >= opts.GlobalDailyFreeCallCap)
         { await EmitHandoff(resp, db, convo, LeadReason.QuotaOverflow, text, hard: true, ct); return; }
         global.FreeCallCount++;
+
+        if (global.FreeCallCount >= opts.OperatorAlertThreshold && global.OperatorAlertSentAt is null
+            && !string.IsNullOrWhiteSpace(opts.OperatorAlertEmail))
+        {
+            global.OperatorAlertSentAt = DateTime.UtcNow;   // date-keyed row → re-arms tomorrow
+            try
+            {
+                await email.SendAsync(opts.OperatorAlertEmail!,
+                    "Support agent nearing the free-tier ceiling",
+                    $"<p>Today's shared OpenRouter free-tier usage is {global.FreeCallCount}/{opts.GlobalDailyFreeCallCap}.</p>" +
+                    "<p>Consider the one-time $10 OpenRouter top-up if this recurs.</p>", ct);
+            }
+            catch { /* non-fatal */ }
+        }
         await db.SaveChangesAsync(ct);
 
         var prior = await db.Messages.Where(m => m.ConversationId == convo.Id)

@@ -15,6 +15,7 @@ public static class AuthEndpoints
         group.MapPost("/refresh", Refresh);
         group.MapPost("/logout", Logout);
         group.MapGet("/me", Me).RequireAuthorization();
+        group.MapPost("/demo-login", DemoLogin);
         return app;
     }
 
@@ -146,6 +147,20 @@ public static class AuthEndpoints
             new UserDto(user.Email!, user.DisplayName),
             new TenantDto(tenant.Id, tenant.Name, tenant.SiteKey))
         );
+    }
+
+    private static async Task<IResult> DemoLogin(UserManager<ApplicationUser> users, AppDbContext db,
+    TokenService tokens, IWebHostEnvironment env, HttpContext http, IConfiguration config)
+    {
+        var email = config["Auth:DemoEmail"] ?? "demo@demo.local";
+        var user = await users.FindByEmailAsync(email);
+        if (user is null) return Results.Problem(statusCode: 404, title: "Demo account isn't seeded yet.");
+
+        var tenant = await db.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.OwnerUserId == user.Id);
+        if (tenant is null) return Results.Problem(statusCode: 500, title: "Demo tenant missing.");
+
+        return await IssueTokens(user, tenant, db, tokens, env, http);
     }
 
     private static CookieOptions RefreshCookieOptions(IWebHostEnvironment env, DateTime expires) => new()

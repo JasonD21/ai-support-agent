@@ -7,9 +7,10 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace AiSupportAgent.Api.Identity;
 
-public class TokenService(IOptions<JwtOptions> opts)
+public class TokenService(IOptions<JwtOptions> opts, IConfiguration config)
 {
     private readonly JwtOptions _opts = opts.Value;
+    private readonly string? _demoEmail = config["Auth:DemoEmail"];
 
     public (string token, DateTime expiresAtUtc) CreateAccessToken(ApplicationUser user, Guid tenantId)
     {
@@ -25,10 +26,13 @@ public class TokenService(IOptions<JwtOptions> opts)
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
+        if (!string.IsNullOrEmpty(_demoEmail)
+            && string.Equals(user.Email, _demoEmail, StringComparison.OrdinalIgnoreCase))
+            claims.Add(new Claim("is_demo", "true"));
+
         var token = new JwtSecurityToken(
             issuer: _opts.Issuer, audience: _opts.Audience,
-            claims: claims, expires: expires, signingCredentials: creds
-        );
+            claims: claims, expires: expires, signingCredentials: creds);
 
         return (new JwtSecurityTokenHandler().WriteToken(token), expires);
     }

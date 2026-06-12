@@ -5,7 +5,8 @@ namespace AiSupportAgent.Api.Common;
 public class EmailOptions
 {
     public string? ApiKey { get; set; }
-    public string FromEmail { get; set; } = "jasondavids54@gmail.com";
+    public string FromEmail { get; set; } = "onboarding@resend.dev";
+    public string? OverrideRecipient { get; set; }
 }
 
 public interface IEmailSender
@@ -20,10 +21,11 @@ public class ResendEmailSender(IHttpClientFactory httpFactory, IOptions<EmailOpt
         var key = opts.Value.ApiKey;
         if (string.IsNullOrWhiteSpace(key)) { log.LogWarning("Resend not configured; skipping email to {To}.", to); return; }
 
+        var recipient = string.IsNullOrWhiteSpace(opts.Value.OverrideRecipient) ? to : opts.Value.OverrideRecipient;
         var http = httpFactory.CreateClient();
         var req = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails")
         {
-            Content = JsonContent.Create(new { from = opts.Value.FromEmail, to, subject, html })
+            Content = JsonContent.Create(new { from = opts.Value.FromEmail, to = recipient, subject, html })
         };
         req.Headers.Add("Authorization", $"Bearer {key}");
         var resp = await http.SendAsync(req, ct);

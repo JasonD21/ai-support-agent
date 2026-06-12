@@ -31,6 +31,7 @@ type AuthState = {
     displayName?: string,
   ) => Promise<void>;
   logout: () => Promise<void>;
+  demoLogin: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -112,6 +113,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     applyAuth(await res.json());
   }
 
+  async function demoLogin() {
+    const res = await fetch(`${API_BASE}/api/auth/demo-login`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.title ?? "Demo unavailable");
+    }
+    applyAuth(await res.json());
+  }
+
   async function logout() {
     await fetch(`${API_BASE}/api/auth/logout`, {
       method: "POST",
@@ -124,7 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, tenant, loading, login, register, logout }}
+      value={{ user, tenant, loading, login, register, logout, demoLogin }}
     >
       {children}
     </AuthContext.Provider>

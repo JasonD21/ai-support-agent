@@ -11,4 +11,6 @@ public class RagOptions
     public int PerTenantDailyMessageCap { get; set; } = 200;
     public int GlobalDailyFreeCallCap { get; set; } = 45;
     public int ConsecutiveUnresolvedThreshold { get; set; } = 2;
+    public int OperatorAlertThreshold { get; set; } = 40;
+    public string? OperatorAlertEmail { get; set; }
 }

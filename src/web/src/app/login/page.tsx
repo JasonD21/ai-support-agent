@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, demoLogin } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,6 +22,19 @@ export default function LoginPage() {
       router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDemo() {
+    setBusy(true);
+    setError(null);
+    try {
+      await demoLogin();
+      router.push("/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Demo unavailable");
     } finally {
       setBusy(false);
     }
@@ -61,6 +74,14 @@ export default function LoginPage() {
           className="w-full rounded bg-indigo-600 px-3 py-2 text-white disabled:opacity-50"
         >
           {busy ? "Signing in…" : "Sign in"}
+        </button>
+        <button
+          type="button"
+          onClick={onDemo}
+          disabled={busy}
+          className="w-full rounded border px-3 py-2 text-sm disabled:opacity-50"
+        >
+          Explore the demo (no signup)
         </button>
         <p className="text-center text-sm text-gray-500">
           No account?{" "}

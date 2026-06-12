@@ -162,6 +162,7 @@ app.UseAuthentication();
 app.UseMiddleware<TenantResolutionMiddleware>();
 app.UseAuthorization();
 app.UseRateLimiter();
+app.UseMiddleware<DemoReadOnlyMiddleware>();
 
 app.MapAuthEndpoints();
 app.MapAgentEndpoints();
@@ -178,5 +179,7 @@ app.MapGet("/health", () => Results.Ok(new
     service = "ai-support-agent-api",
     timeUtc = DateTime.UtcNow
 }));
+
+await DemoSeeder.SeedAsync(app.Services);
 
 app.Run();
