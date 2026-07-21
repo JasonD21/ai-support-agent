@@ -2,7 +2,7 @@
 
 **A multi-tenant SaaS that turns a small business's own FAQs, services, and policies into a deployable AI chat widget — grounded answers, an embeddable script tag, and a "needs a human" handoff that captures unresolved chats as leads.**
 
-[![Live demo](https://img.shields.io/badge/demo-live-4f46e5)](<[%3CLIVE_DEMO_URL%3E](https://ai-support-agent-three.vercel.app/)>)
+[![Live demo](https://img.shields.io/badge/demo-live-4f46e5)](https://ai-support-agent-three.vercel.app/)
 ![.NET](https://img.shields.io/badge/.NET-10-512BD4)
 ![Next.js](https://img.shields.io/badge/Next.js-React-000000)
 ![Postgres](https://img.shields.io/badge/Postgres-pgvector-336791)
@@ -14,8 +14,8 @@
 
 > The heartbeat keeps the instance warm, so the demo answers instantly — no cold start when you click.
 
-- **🗨️ Chat with the live agent** → [<LIVE_DEMO_URL>](https://ai-support-agent-three.vercel.app/) — you're a customer of a fictional coffee roastery. Ask about shipping, returns, or blends and watch it answer from the roastery's knowledge. Ask something it can't know ("can you cater my wedding?") and watch it offer a human handoff and capture your details as a lead.
-- **📊 Explore the dashboard (read-only)** → [<LIVE_DEMO_URL>](https://ai-support-agent-three.vercel.app/), click **Explore the demo** — see the owner's side: the structured knowledge base, the conversation log with **per-turn grounding metadata** (which chunks were retrieved, the confidence score, the model used), and the captured leads.
+- **Chat with the live agent** → [ai-support-agent-three.vercel.app](https://ai-support-agent-three.vercel.app/) — you're a customer of a fictional coffee roastery. Ask about shipping, returns, or blends and watch it answer from the roastery's knowledge. Ask something it can't know ("can you cater my wedding?") and watch it offer a human handoff and capture your details as a lead.
+- **Explore the dashboard (read-only)** → [open the demo](https://ai-support-agent-three.vercel.app/), click **Explore the demo** — see the owner's side: the structured knowledge base, the conversation log with **per-turn grounding metadata** (which chunks were retrieved, the confidence score, the model used), and the captured leads.
 
 <!-- TODO: looping GIF — grounded answer → out-of-scope question → handoff → lead capture -->
 
@@ -172,7 +172,7 @@ src/web/           Next.js dashboard + /embed widget app + widget.js
 ## About
 
 Built by **Jason Davids** — full-stack developer (Angular / React · .NET · Postgres).
-GitHub: [JasonD21](https://github.com/JasonD21) · LinkedIn: [<LINKEDIN_URL>](https://www.linkedin.com/in/jason-davids-09aa201b0/)
+GitHub: [JasonD21](https://github.com/JasonD21) · LinkedIn: [Jason Davids](https://www.linkedin.com/in/jason-davids-09aa201b0/)
 
 One of three portfolio projects demonstrating production SaaS patterns end to end.
 
